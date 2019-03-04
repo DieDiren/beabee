@@ -70,12 +70,12 @@ myspec <-
         b <- round(to * f)
       }
       wl <- (b - a) + 1
-      wave <- as.matrix(wave[a:b,])
+      wave <- as.matrix(wave[a:b, ])
     }
     if (!is.null(at)) {
       c <- round(at * f)
       wl2 <- wl %/% 2
-      wave <- as.matrix(wave[(c - wl2):(c + wl2),])
+      wave <- as.matrix(wave[(c - wl2):(c + wl2), ])
     }
     n <- nrow(wave)
     W <- ftwindow(n, wn = wn, correction = correction)
@@ -277,18 +277,18 @@ myspec <-
     }
   }
 
-substrRight <- function(x, n){
+substrRight <- function(x, n) {
   # helper function to get the substring from the rigth
   # Params:
   #  x: string
   #  n: number of chars to take
   # Returns:
   #  the substring
-  substr(x, nchar(x)-n+1, nchar(x))
+  substr(x, nchar(x) - n + 1, nchar(x))
 }
 
 
-get.timestamp <- function(file){
+get.timestamp <- function(file) {
   # extract the timestamp from the filename
   # in case of the be a bee data the filenames are in a form like
   # "miks boden-03-may-20-52.wav"
@@ -299,129 +299,230 @@ get.timestamp <- function(file){
   # Returns: the timestamp
   last <- substrRight(file, 16)
   # in case of convertion
-  if(substrRight(last, 7)=="mp3.wav"){
+  if (substrRight(last, 7) == "mp3.wav") {
     last <- substrRight(file, 20)
-  } 
+  }
   day <- substr(last, 1, 2)
   month.str <- substr(last, 4, 6)
-  if(month.str=="may"){
+  if (month.str == "jun") {
+    month = "06"
+  } else if (month.str == "may") {
     month = "05"
-  }else if(month.str=="apr"){
+  } else if (month.str == "apr") {
     month = "04"
   }
   year <- "2013"
   hour <- substr(last, 8, 9)
-  minute <- substr(last, 11,12)
+  minute <- substr(last, 11, 12)
   seconds <- "00"
   date <- paste(year, month, day, sep = "-")
   time <- paste(hour, minute, sep = ":")
   return(as.POSIXlt(paste(date, time)))
 }
 
-analyse <- function(file, directory, seconds, channel.number, csv, maxfreq=1000, binfreq=20){
-  # Run a fft on the file and get some addtional information like dominant frequency. 
-  # Saves the extracted information to specified csv file
-  #
-  # Params:
-  #  file: the file name
-  #  directory: the path to the file
-  #  seconds: bin width for the fft
-  #  channel.number: 1 for left channel, 2 for rigth channel
-  #  csv: the name of an existing csv-file to save the results to
-  #  maxfreq: maximal frequency to save to the csv
-  #  binfreq: width of the frequency bands
-  
-  # read header of wav only, to obtain duration
-  wav <-readWave(paste(directory, file, sep=""), header=TRUE)
-  samp.rate <- wav$sample.rate
-  duration <- round(wav$samples / samp.rate, 0)
-  # Devide in Chunks
-  froms <- seq(0, duration-seconds, seconds)
-  current.timestamp <- get.timestamp(file)
-  rest <- minute(current.timestamp)%%10
-  if(rest!=0){
-    froms <- froms + 60*(10-rest)
-    current.timestamp <- current.timestamp + 60*(10-rest)
-  }
-  for(i in 1:length(froms)){
-    to <- froms[i] +seconds
-    if(to > duration){
-      to <- duration
+quoted <- function(s) {
+  return(paste("\"", s, "\"", sep = ""))
+}
+
+analyse <-
+  function(file,
+           directory,
+           seconds,
+           channel.number,
+           csv,
+           maxfreq = 1000,
+           binfreq = 20) {
+    # Run a fft on the file and get some addtional information like dominant frequency.
+    # Saves the extracted information to specified csv file
+    #
+    # Params:
+    #  file: the file name
+    #  directory: the path to the file
+    #  seconds: bin width for the fft
+    #  channel.number: 1 for left channel, 2 for rigth channel
+    #  csv: the name of an existing csv-file to save the results to
+    #  maxfreq: maximal frequency to save to the csv
+    #  binfreq: width of the frequency bands
+    
+    # read header of wav only, to obtain duration
+    
+    print(file)
+    wav <- readWave(paste(directory, file, sep = ""), header = TRUE)
+    samp.rate <- wav$sample.rate
+    duration <- round(wav$samples / samp.rate, 0)
+    # Devide in Chunks
+    # run only if long enough
+    if (duration < seconds) {
+      stop("File to short")
     }
-    wav <-  readWave(paste(directory, file, sep=""), from = froms[i], to = to, unit = "seconds")
-    channel <- wav[,channel.number]
-    # get the frequency spectrum see seewave::spec for documentation
-    spec <- myspec(channel, wav@samp.rate, fftw = T, plot = F)
-    # get information like dominant frequency, etc.
-    analysed <- specprop(spec)
-    # get fundamental frequency
-    fnd <- fund(wav, fmax=2000, wl = 1024, plot = F)
-    # only consider frequency range:
-    filter <- spec[,2][spec[,1]<maxfreq/1000]
-    # take means:
-    specmeans <- .colMeans(filter, length(filter) / maxfreq/binfreq, maxfreq/binfreq)
-    frequencies <- seq(0,maxfreq-binfreq, binfreq)
-    ampl.line <- paste(specmeans, collapse = ",")
-    # write everything to csv
-    write(paste(ampl.line,
-                analysed$mean,
-                analysed$sd,
-                analysed$sem,
-                analysed$median,
-                analysed$mode,
-                mean(fnd[,2], na.rm = T),
-                as.character(current.timestamp),
-                file,
-                sep=","), file=csv, append=TRUE)
-    current.timestamp <- current.timestamp +seconds
+    if (channel.number < 0 || channel.number > 2) {
+      stop("Channel number must be 1 or 2")
+    }
+    if (channel.number > wav$channels) {
+      stop("Channel does not exist")
+    }
+    froms <- seq(0, duration - seconds, seconds)
+    current.timestamp <- get.timestamp(file)
+    rest <- minute(current.timestamp) %% 10
+    if (rest != 0) {
+      froms <- froms + 60 * (10 - rest)
+      current.timestamp <- current.timestamp + 60 * (10 - rest)
+    }
+    for (i in 1:length(froms)) {
+      to <- froms[i] + seconds
+      if (to > duration) {
+        to <- duration
+      }
+      wav <-
+        readWave(
+          paste(directory, file, sep = ""),
+          from = froms[i],
+          to = to,
+          unit = "seconds"
+        )
+      # run only if channel exist
+      channel <- wav[, channel.number]
+      # get the frequency spectrum see seewave::spec for documentation
+      spec <- myspec(channel, wav@samp.rate, fftw = T, plot = F)
+      # get information like dominant frequency, etc.
+      analysed <- specprop(spec)
+      # get fundamental frequency
+      #fnd <- fund(wav, fmax=2000, wl = 1024, plot = F)
+      # only consider frequency range:
+      filter <- spec[, 2][spec[, 1] < maxfreq / 1000]
+      # take means:
+      specmeans <-
+        .colMeans(filter, length(filter) / maxfreq / binfreq, maxfreq / binfreq)
+      frequencies <- seq(0, maxfreq - binfreq, binfreq)
+      ampl.line <- paste(specmeans, collapse = ",")
+      # write everything to csv
+      write(
+        paste(
+          ampl.line,
+          analysed$mean,
+          analysed$sd,
+          analysed$sem,
+          analysed$median,
+          analysed$mode,
+          channel.number,
+          #mean(fnd[,2], na.rm = T),
+          as.character(current.timestamp),
+          file,
+          sep = ","
+        ),
+        file = csv,
+        append = TRUE
+      )
+      current.timestamp <- current.timestamp + seconds
+    }
+    write(file, "passed.csv", append = T)
   }
-}
 
-main <- function(file, table, channel.number=1, directory="../../data/boden/"){
-  library(tuneR)
-  library(seewave)
-  library(e1071)
-  library(lubridate)
-  if(substrRight(file,3) == "wav"){
-    analyse(file, directory, 60*10, 2, paste(table, file, ".csv", sep = ""))
+main <-
+  function(file,
+           table,
+           channel.number = 1,
+           directory = "../../data/boden/") {
+    print(file)
+    library(tuneR)
+    library(seewave)
+    library(e1071)
+    library(lubridate)
+    tryCatch({
+      if (substrRight(file, 3) == "wav") {
+        analyse(file,
+                directory,
+                60 * 10,
+                channel.number,
+                paste(table, file, ".csv", sep = ""))
+      }
+    },
+    error = function(cond) {
+      write(paste(quoted(cond), quoted(file), sep = ","), "log.csv", append = T)
+    },
+    warning = function(cond) {
+      write(paste(quoted(cond), quoted(file), sep = ","), "log.csv", append = T)
+    },
+    finally = {
+    })
   }
+
+
+directories <-
+  c(
+   "/media/diren/Bienenklänge BE A BEE/Daten_Vom Klang der Bienen/1.Speicherung13.4-18.4/miks/",
+    "/media/diren/Bienenklänge BE A BEE/Daten_Vom Klang der Bienen/3.Speicherung bis 4.5/Miks/",
+    "/media/diren/Bienenklänge BE A BEE/Daten_Vom Klang der Bienen/4.Speicherung 4.5-17.5/Miks/",
+    "/media/diren/Bienenklänge BE A BEE/Daten_Vom Klang der Bienen/5.Speicherung 17.5-3.6/Miks/",
+    "/media/diren/Bienenklänge BE A BEE/Daten_Vom Klang der Bienen/7.Speicherung 7.6-13.6/miks/",
+    "/media/diren/Bienenklänge BE A BEE/Daten_Vom Klang der Bienen/8.Speicherung13.6-26.6/miks/"
+  )
+directories <- c("/home/diren/Documents/2018/beABee/data/mp3s/")
+
+table <- "mp3s1/"
+for (i in 1:length(directories)) {
+  directory <- directories[i]
+  files <- list.files(path = directory)
+  print(files)
+  
+  # For a simple run:
+  #files <- c("miks boden-03-may-20-52.wav", "miks boden-27-apr-12-46.mp3.wav")
+  #lapply(files, main)
+  # or:
+  # main("miks boden-01-may-15-30.wav", "test.csv") # you might need to create an empty test.csv before
+  
+  # Run on one core only:
+  #print(files)
+  #lapply(files, main, table=table, directory=directory, channel.number=2)
+  #
+  # Run in parallel:
+  #no_cores <- detectCores() # when I use to many cores, there's not enough memory, so I used max 3
+  clust <- makeCluster(3)
+  clusterExport(clust,
+                list(
+                  "substrRight",
+                  "get.timestamp",
+                  "analyse",
+                  "myspec",
+                  "quoted"
+                ))
+  parLapply(
+    clust,
+    files,
+    main,
+    table = table,
+    directory = directory,
+    channel.number = 2
+  )
+  stopCluster(clust)
 }
-
-
-directory <- "../../data/boden/"
-table <- "tableBoden2/"
-files <- list.files(path=directory)
-
-# For a simple run:
-#files <- c("miks boden-03-may-20-52.wav", "miks boden-27-apr-12-46.mp3.wav")
-# lapply(files, main)
-# or:
-# main("miks boden-01-may-15-30.wav", "test.csv") # you might need to create an empty test.csv before
-
-# Run on one core only:
-# lapply(files, main)
-
-# Run in parallel:
-# no_cores <- detectCores() # when I use to many cores, there's not enough memory, so I used max 3
-clust <- makeCluster(3) 
-clusterExport(clust, list("substrRight", "get.timestamp", "analyse", "myspec"))
-parLapply(clust, files, main, table=table, directory=directory, channel.number=2)
-stopCluster(clust)
-
 # create Header-Line
-fileConn<-file(paste(table, "aheader.csv", sep = ""))
-frequencies <- seq(0,1000-20, 20)
-freq.line = paste(frequencies, sep="", collapse = ", ")
-writeLines(paste(freq.line, "mean", "sd", "sem",
-                 "median", "mode", "fund", "timestamp", "file", sep=", "), fileConn)
+fileConn <- file(paste(table, "aheader.csv", sep = ""))
+frequencies <- seq(0, 1000 - 20, 20)
+freq.line = paste(frequencies, sep = "", collapse = ", ")
+writeLines(
+  paste(
+    freq.line,
+    "mean",
+    "sd",
+    "sem",
+    "median",
+    "mode",
+    "channel",
+    "timestamp",
+    "file",
+    sep = ", "
+  ),
+  fileConn
+)
 close(fileConn)
-
-# Combine files after parallel run
-# use cat * > combined.csv in terminal, it is the fastes option!
-
-# Read the file, to test, if everything is there
-combined <- read.table("tables/combined.csv", header=T, sep=",")
-# sort by timestamp
-combined <- combined[order(combined$timestamp),]
-# plot fundamental frequency
-#plot(combined$fund)
+#
+# # Combine files after parallel run
+# # use cat * > combined.csv in terminal, it is the fastes option!
+#
+# # Read the file, to test, if everything is there
+# #combined <- read.table("tables/combined.csv", header=T, sep=",")
+# # sort by timestamp
+# #combined <- combined[order(combined$timestamp),]
+# # plot fundamental frequency
+# #plot(combined$fund)
